@@ -1,0 +1,15 @@
+package build
+
+import mill.scalalib.*
+
+object thirdparty:
+  val clip = mvn"io.crashbox::clip::0.2.2-SNAPSHOT"
+  val autoset = mvn"io.crashbox::autoset::0.1.1"
+  val oslib = mvn"com.lihaoyi::os-lib::0.11.8"
+  val ustats = mvn"io.crashbox::ustats::0.9.2"
+  val keg = mvn"io.crashbox::keg::0.2.2"
+  val utestVersion = "0.9.1"
+  val utest = mvn"com.lihaoyi::utest::$utestVersion"
+  val scalajsDom = mvn"org.scala-js::scalajs-dom::2.8.1"
+  val geny = mvn"com.lihaoyi::geny::1.1.1"
+  val scalatags = mvn"com.lihaoyi::scalatags::0.13.1"

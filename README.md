@@ -1,0 +1,214 @@
+# qtags
+
+HTML for Scala 3, written as plain code and built on context functions.
+
+```scala
+import qtags.*
+
+renderString {
+  div {
+    cls("greeting")
+    h1 { text("Hello") }
+    ul { for name <- Seq("Ann", "Bob & co") do li { text(name) } }
+  }
+}
+// <div class="greeting"><h1>Hello</h1><ul><li>Ann</li><li>Bob &amp; co</li></ul></div>
+```
+
+qtags is similar to [scalatags](https://github.com/com-lihaoyi/scalatags), but
+it builds no tree. Tags are `inline` functions taking a block; inside the
+block, attributes, text and child tags are statements that write straight to
+an output, which is passed along as a context parameter. That keeps it fast
+(4–5× faster than scalatags; see [Performance](#performance)) and lets
+ordinary Scala `for`, `if` and `match` appear anywhere in a page.
+
+The repository has three libraries:
+
+| Module | What it is | Platforms |
+|---|---|---|
+| [`qtags`](qtags/src) | the HTML DSL, rendering to strings, streams or the DOM | JVM, Scala.js, Scala Native |
+| [`sigs`](sigs/src) | reactive signals, in the style of the [JavaScript signals proposal](https://github.com/tc39/proposal-signals) | JVM, Scala.js, Scala Native |
+| [`reactive`](reactive/src) | a reactive DOM: qtags views that update when signals change | Scala.js |
+
+## qtags
+
+### Tags, attributes and text
+
+`import qtags.*` brings in every HTML element and attribute. Attributes are
+statements at the start of a tag's block, before any content:
+
+```scala
+a { href("/docs"); cls("nav-link"); text("Docs") }
+input { tpe("checkbox"); id("agree"); checked }    // boolean attributes take no argument
+img { src("logo.png"); alt("Logo") }               // void elements: attributes only
+br()                                               // ...and `()` when there are none
+```
+
+- Text is escaped. `raw(html)` inserts trusted markup as-is, which is also how
+  to write `<script>` and `<style>` content.
+- `doctype` writes `<!DOCTYPE html>`, for full pages.
+- Attribute names follow HTML, in camelCase (`httpEquiv`, `acceptCharset`).
+  Scala keywords need backticks (`` `for` ``, `` `type` ``, `` `class` ``), and
+  `class` and `type` also have the aliases `cls` and `tpe`.
+- `data(name, value)` and `aria(name, value)` write `data-*` and `aria-*`
+  attributes; `attr(name, value)` writes any other.
+- A few names are both a tag and an attribute. `import qtags.*` exports the
+  more common one; the other is in `tags` or `attrs`:
+
+  | Exported as a tag | Exported as an attribute |
+  |---|---|
+  | `abbr cite form label slot span` | `data style title` |
+
+  ```scala
+  form { title("Sign up"); label { attrs.form("signup"); text("Name") } }
+  head { tags.title { text("Page title") } }
+  ```
+
+Mistakes the types don't catch are caught when rendering: an attribute after
+content, or content inside a void element, throws an `IllegalStateException`.
+
+### Components
+
+A component is a function returning a `Frag` (a fragment of HTML,
+`Html ?=> Unit`). Blocks of children are just `Frag` parameters:
+
+```scala
+def card(heading: String)(content: Frag): Frag =
+  section {
+    cls("card")
+    h2 { text(heading) }
+    content
+  }
+
+card("Welcome") {
+  p { text("Components are plain functions.") }
+}
+```
+
+[`examples/components`](examples/components/src/components/ui.scala) is a small
+component library showing the usual patterns: a page layout, components taking
+several blocks of children, variants, extra attributes passed in by the caller,
+and a generic table.
+
+### Rendering
+
+| Function | Returns |
+|---|---|
+| `renderString(frag)` | a `String` |
+| `render(frag)` | a [`geny.Writable`](https://github.com/com-lihaoyi/geny) with the HTML content type and length set; ready to return from a web server endpoint |
+| `renderLazy(frag)` | a `geny.Writable` that streams the page while rendering it, without building it in memory first |
+| `renderInto(element)(frag)`, `renderDom(frag)` | real DOM nodes (Scala.js only) |
+
+With the DOM backend, fragments can also attach event handlers, which only
+compiles where a DOM is available:
+
+```scala
+renderInto(dom.document.body) {
+  button { text("Click"); onClick(_ => println("clicked")) }
+}
+```
+
+## sigs
+
+Signals are values that change over time. A `Computed` derives its value from
+other signals, and tracks which ones it read, so it is recomputed only when
+they change:
+
+```scala
+import sigs.Signal
+
+val first = Signal.State("Ada")
+val last  = Signal.State("Lovelace")
+val full  = Signal.Computed { s"${first()} ${last()}" }   // s() reads and tracks s
+
+val w = Signal.Watcher(() => println(full.now), full)
+last.set("Byron")    // prints "Ada Byron"
+w.dispose()
+```
+
+- Reading with `s()` only compiles inside a `Computed`; use `s.now` anywhere
+  else.
+- Computeds are lazy, cached, and stop propagating when they recompute to an
+  equal value. Changes are glitch-free: nothing ever sees a mix of old and new
+  values.
+- A `Watcher` runs a callback after its signal changes. Only watched signals
+  are linked to their sources, so unwatched ones can be garbage collected.
+- `Signal.batch { ... }` groups several changes into one notification.
+- `map`, `flatMap` and `zip` combine signals, and work in for-comprehensions:
+  `for a <- x; b <- y yield a + b`.
+
+## reactive
+
+`reactive` renders qtags views into the DOM and keeps them up to date. Updates
+are fine-grained, with no virtual DOM: each binding updates exactly the DOM it
+created when its signal changes.
+
+```scala
+import org.scalajs.dom
+import qtags.*
+import reactive.*
+import sigs.Signal.State
+
+val count = State(0)
+
+mount(dom.document.body) {
+  p { bindText(count.map(n => s"Clicked $n times")) }
+  button { text("+1"); onClick(_ => count.update(_ + 1)) }
+}
+```
+
+| | |
+|---|---|
+| `bindText(sig)` | a text node kept equal to `sig` |
+| `bindAttr(name, sig)`, `bindProp(name, sig)` | an attribute or DOM property (such as `checked`) of the enclosing element |
+| `each(items, key) { (key, item) => ... }` | a keyed list. Items that stay keep their DOM, and each gets a signal of its current value |
+| `dyn { ... }` | a region, re-rendered when the signals it reads change (for `if`s and the like) |
+| `mount(parent)(view)` | renders a view; `dispose()` removes it and stops all its bindings |
+
+Everything a region creates is disposed when the region is re-rendered or
+removed, so removed DOM is never kept alive by the signals it watched.
+[`examples/todomvc`](examples/todomvc/src/todomvc/App.scala) is a complete
+[TodoMVC](https://todomvc.com).
+
+## Examples
+
+| Example | Run with |
+|---|---|
+| [components](examples/components/src/components) – a component library | `./mill examples.components.run > demo.html` |
+| [server](examples/server/src/App.scala) – a to-do app served by [keg](https://github.com/jodersky/keg) | `./mill examples.server.run`, then open http://localhost:8080 |
+| [todomvc](examples/todomvc/src/todomvc/App.scala) – TodoMVC in the browser | `./mill show examples.todomvc.site`, then open `index.html` in the printed directory |
+
+## Performance
+
+The [benchmark](bench/src/qtags/bench/PageBench.scala) renders the same page
+with qtags and scalatags 0.13.1: a page shell, a nav list and a table with one
+row per user, built from scratch on every call. Both libraries produce the same
+HTML.
+
+| rows | qtags | scalatags | speedup | qtags allocated | scalatags allocated |
+|---:|---:|---:|---:|---:|---:|
+| 10 | 3.41 ± 0.21 µs | 16.2 ± 1.3 µs | 4.7× | 7.6 KB | 30.7 KB |
+| 100 | 28.8 ± 7.8 µs | 127 ± 16 µs | 4.4× | 59.4 KB | 234.9 KB |
+| 1000 | 264 ± 35 µs | 1298 ± 124 µs | 4.9× | 541.3 KB | 2214.2 KB |
+
+Average time and allocation per page, measured with JMH on one machine. Run
+`scripts/bench` to measure on yours.
+
+## Development
+
+The build uses [Mill](https://mill-build.org); `./mill` downloads it.
+
+```
+scripts/test         # all tests, on all platforms
+scripts/bench        # the benchmark, printed as a table
+./mill qtags.jvm.test             # one module's tests
+./mill __.compile                 # compile everything
+```
+
+The Scala.js DOM tests run under [jsdom](https://github.com/jsdom/jsdom);
+`scripts/test` installs it on first run (`npm ci` in `qtags/test/js`). Native
+builds need clang.
+
+Cross-platform modules keep shared code in `<module>/src`, and
+platform-specific code in `src-jvm`, `src-js` and `src-native`. The same layout
+applies to tests under `<module>/test`.

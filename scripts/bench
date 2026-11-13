@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""Run the qtags vs scalatags benchmarks (bench/) and print a markdown table
+comparing time and allocation per rendered page.
+
+Usage: scripts/bench [JMH args...]
+  scripts/bench                      full run (~3 min)
+  scripts/bench -f1 -wi 3 -i 3       quicker, noisier run
+  scripts/bench -p rows=1000         only one table size
+
+JMH's own output goes to stderr; only the table goes to stdout, so
+`scripts/bench > results.md` keeps just the table.
+"""
+
+import json
+import subprocess
+import sys
+import tempfile
+from collections import defaultdict
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def run_jmh(jmh_args: list[str]) -> list[dict]:
+    with tempfile.NamedTemporaryFile(prefix="qtags-bench.", suffix=".json") as results:
+        subprocess.run(
+            ["./mill", "bench.runJmh", "-prof", "gc", "-rf", "json", "-rff", results.name, *jmh_args],
+            cwd=ROOT,
+            stdout=sys.stderr,
+            check=True,
+        )
+        return json.load(open(results.name))
+
+
+def fmt_time(score: float, error: float, unit: str) -> str:
+    unit = {"us/op": "µs", "ns/op": "ns", "ms/op": "ms"}.get(unit, unit)
+    d = 0 if score >= 100 else 1 if score >= 10 else 2  # ~3 significant digits
+    err = f" ± {error:.{d}f}" if error == error else ""  # NaN with too few samples
+    return f"{score:.{d}f}{err} {unit}"
+
+
+def fmt_bytes(b: float | None) -> str:
+    return "n/a" if b is None else f"{b / 1000:.1f} KB"
+
+
+def table(runs: list[dict]) -> str:
+    data = defaultdict(dict)  # rows -> library -> result
+    for r in runs:
+        library = r["benchmark"].rsplit(".", 1)[1]
+        pm = r["primaryMetric"]
+        data[int(r["params"]["rows"])][library] = {
+            # JMH writes "NaN" (a string) as the error when there are too few samples
+            "time": fmt_time(pm["score"], float(pm["scoreError"]), pm["scoreUnit"]),
+            "score": pm["score"],
+            "alloc": fmt_bytes(r["secondaryMetrics"].get("gc.alloc.rate.norm", {}).get("score")),
+        }
+
+    lines = [
+        "| rows | qtags | scalatags | speedup | qtags allocated | scalatags allocated |",
+        "|---:|---:|---:|---:|---:|---:|",
+    ]
+    for rows in sorted(data):
+        q, s = data[rows].get("qtags"), data[rows].get("scalatags")
+        if q and s:
+            speedup = s["score"] / q["score"]
+            lines.append(
+                f"| {rows} | {q['time']} | {s['time']} | {speedup:.1f}× | {q['alloc']} | {s['alloc']} |"
+            )
+    return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    try:
+        print(table(run_jmh(sys.argv[1:])))
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.returncode)

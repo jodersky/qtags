@@ -1,0 +1,144 @@
+//| mill-version: 1.3.1
+//| mill-jvm-version: 25
+//| mvnDeps:
+//| - com.lihaoyi::mill-contrib-jmh:$MILL_VERSION
+
+import mill.*, scalalib.*, scalajslib.*, scalajslib.api.*, scalanativelib.*, scalafmt.*, publish.*
+import contrib.jmh.JmhModule
+import mill.api.BuildCtx
+import build.thirdparty
+
+val scala3 = "3.9.0"
+val scalaJS = "1.22.0"
+val scalaNative = "0.5.12"
+
+/** Settings shared by every module built for several platforms. Sources go in
+  * `<module>/src`, platform-only ones in `<module>/src-jvm`, `src-js`,
+  * `src-native` (and the same under `<module>/test`).
+  */
+trait CrossPlatform extends ScalaModule, PlatformScalaModule:
+  def scalaVersion = scala3
+  def scalacOptions = Seq("-deprecation", "-feature", "-unchecked", "-encoding", "utf8")
+
+/** Finds `node` on the PATH of the shell running `./mill`. The Mill daemon's
+  * own PATH may lack it (e.g. when an IDE started the daemon without nvm).
+  */
+def nodeExecutable = Task.Input:
+  Task.env.get("PATH").toSeq
+    .flatMap(_.split(java.io.File.pathSeparatorChar))
+    .filter(_.startsWith("/"))
+    .map(dir => os.Path(dir) / "node")
+    .find(os.isFile(_))
+    .fold("node")(_.toString)
+
+/** JS environment for DOM tests: Node.js with jsdom. Install jsdom with
+  * `npm install` in qtags/test/js (scripts/test does it).
+  */
+def jsdomEnv = Task:
+  JsEnvConfig.JsDom(
+    executable = nodeExecutable(),
+    env = Map("NODE_PATH" -> (BuildCtx.workspaceRoot / "qtags" / "test" / "js" / "node_modules").toString)
+  )
+
+object qtags extends Module:
+
+  trait Shared extends CrossPlatform:
+    def mvnDeps = Seq(thirdparty.geny)
+
+  // Shared sources:  qtags/src,  qtags/test/src
+  // JVM-only:        qtags/src-jvm
+  object jvm extends Shared:
+    def mvnDeps = super.mvnDeps() ++ Seq(
+      thirdparty.clip,
+      thirdparty.ustats,
+      thirdparty.oslib,
+      thirdparty.keg
+    )
+    object test extends ScalaTests, TestModule.Utest:
+      def utestVersion = thirdparty.utestVersion
+
+  // JS-only:         qtags/src-js,  qtags/test/src-js
+  object js extends Shared, ScalaJSModule:
+    def scalaJSVersion = scalaJS
+    def mvnDeps = super.mvnDeps() ++ Seq(thirdparty.scalajsDom)
+    object test extends ScalaJSTests, TestModule.Utest:
+      def utestVersion = thirdparty.utestVersion
+      def jsEnvConfig = jsdomEnv()
+
+  // Native-only:     qtags/src-native,  qtags/test/src-native
+  object native extends Shared, ScalaNativeModule:
+    def scalaNativeVersion = scalaNative
+    object test extends ScalaNativeTests, TestModule.Utest:
+      def utestVersion = thirdparty.utestVersion
+
+// Reactive signals, in the style of the JavaScript signals proposal. No
+// dependencies (not even on qtags) for now.
+object sigs extends Module:
+  object jvm extends CrossPlatform:
+    object test extends ScalaTests, TestModule.Utest:
+      def utestVersion = thirdparty.utestVersion
+
+  object js extends CrossPlatform, ScalaJSModule:
+    def scalaJSVersion = scalaJS
+    object test extends ScalaJSTests, TestModule.Utest:
+      def utestVersion = thirdparty.utestVersion
+      def jsEnvConfig = JsEnvConfig.NodeJs(executable = nodeExecutable())
+
+  object native extends CrossPlatform, ScalaNativeModule:
+    def scalaNativeVersion = scalaNative
+    object test extends ScalaNativeTests, TestModule.Utest:
+      def utestVersion = thirdparty.utestVersion
+
+// Reactive DOM: qtags' DOM backend with bindings to sigs signals (Scala.js only).
+object reactive extends ScalaJSModule:
+  def scalaVersion = scala3
+  def scalaJSVersion = scalaJS
+  def scalacOptions = qtags.js.scalacOptions
+  def moduleDeps = Seq(qtags.js, sigs.js)
+  object test extends ScalaJSTests, TestModule.Utest:
+    def utestVersion = thirdparty.utestVersion
+    def jsEnvConfig = jsdomEnv()
+
+// JMH benchmarks comparing qtags with scalatags (JVM only).
+//   ./mill bench.runJmh                   run all benchmarks
+//   ./mill bench.runJmh -prof gc          also report allocations
+//   ./mill bench.runJmh -f1 -wi 3 -i 5    quicker, less precise run
+object bench extends ScalaModule, JmhModule:
+  def scalaVersion = scala3
+  def scalacOptions = qtags.jvm.scalacOptions
+  def jmhCoreVersion = "1.37"
+  def moduleDeps = Seq(qtags.jvm)
+  def mvnDeps = super.mvnDeps() ++ Seq(thirdparty.scalatags)
+
+// Examples:
+//   ./mill examples.components.run > demo.html   a page using a small component library
+//   ./mill examples.server.run                   a keg app at http://localhost:8080
+//   ./mill show examples.todomvc.site            TodoMVC in the browser (Scala.js); open
+//                                                index.html in the printed directory
+object examples extends Module:
+  trait Example extends ScalaModule:
+    def scalaVersion = scala3
+    def scalacOptions = qtags.jvm.scalacOptions
+
+  object components extends Example:
+    def moduleDeps = Seq(qtags.jvm)
+
+  object server extends Example:
+    def moduleDeps = Seq(examples.components)
+    def mvnDeps = Seq(thirdparty.keg)
+
+  object todomvc extends Example, ScalaJSModule:
+    def scalaJSVersion = scalaJS
+    def moduleDeps = Seq(reactive)
+
+    def indexHtml = Task.Source("index.html")
+
+    /** index.html next to the compiled app, ready to open in a browser. */
+    def site = Task:
+      os.copy(indexHtml().path, Task.dest / "index.html")
+      os.copy(fastLinkJS().dest.path / "main.js", Task.dest / "main.js")
+      PathRef(Task.dest)
+
+    object test extends ScalaJSTests, TestModule.Utest:
+      def utestVersion = thirdparty.utestVersion
+      def jsEnvConfig = jsdomEnv()

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Run all tests on all platforms (JVM, Scala.js, Scala Native).
+# Installs jsdom for the Scala.js DOM tests first if it's missing.
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$root"
+
+if [[ ! -d qtags/test/js/node_modules ]]; then
+  echo "Installing jsdom for the Scala.js DOM tests..." >&2
+  (cd qtags/test/js && npm ci --silent)
+fi
+
+exec ./mill __.test
