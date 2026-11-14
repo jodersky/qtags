@@ -32,11 +32,10 @@ Qtags can generate plain strings, target the DOM directly from scalajs, and is
 
 This repository has two modules:
 
-- `qtags`: the HTML DSL, rendering to strings, streams or the DOM (available for
-  the JVM, Scala.js, ans Scala Native)
-
-- `qtags.sigs`: an experimental helper module for building reactive UIs
-  (available for Scala.js only)
+| Module | Description | Mill dependency | Platforms |
+|---|---|---|---|
+| `qtags` | The HTML DSL, rendering to strings, streams or the DOM | `mvn"io.crashbox::qtags::0.1.0"` | JVM, Scala.js, Scala Native |
+| `qtags.sigs` | Experimental: reactive signals for building UIs | `mvn"io.crashbox::qtags-sigs::0.1.0"` | Scala.js |
 
 ## qtags
 

@@ -12,6 +12,48 @@ val scala3 = "3.9.0"
 val scalaJS = "1.22.0"
 val scalaNative = "0.5.12"
 
+/** The version of this project, derived from git.
+  *
+  * It is the output of `git describe`. If the working tree is dirty, the
+  * current timestamp is appended, so that every build of uncommitted changes
+  * gets a unique version.
+  */
+def publishVersion = Task.Input:
+  val dirtyMarker = "-dirty"
+  val result = os
+    .proc("git", "describe", "--tags", "--always", "--dirty=" + dirtyMarker)
+    .call(cwd = Task.ctx().workspace, check = false, stderr = os.Pipe)
+
+  val described =
+    if result.exitCode == 0 then result.out.trim().stripPrefix("v")
+    else "0.0.0" // no commits yet
+
+  if described.endsWith(dirtyMarker) then
+    val timestamp = java.time.format.DateTimeFormatter
+      .ofPattern("yyyyMMddHHmmss")
+      .withZone(java.time.ZoneOffset.UTC)
+      .format(java.time.Instant.now())
+    s"${described.dropRight(dirtyMarker.length)}-$timestamp"
+  else described
+
+/** Publishing settings for the library modules. */
+trait Publish extends PublishModule:
+  def publishVersion = build.publishVersion()
+  def pomSettings = PomSettings(
+    description = "HTML generation for Scala 3, built on context functions",
+    organization = "io.crashbox",
+    url = "https://github.com/jodersky/qtags",
+    licenses = Seq(License.`BSD-3-Clause`),
+    versionControl = VersionControl.github("jodersky", "qtags"),
+    developers = Seq(
+      Developer("jodersky", "Jakob Odersky", "https://github.com/jodersky")
+    )
+  )
+  // The platform is already in the artifact id (`qtags_sjs1_3`,
+  // `qtags_native0.5_3`), so drop it from the name: `qtags-jvm` -> `qtags`.
+  def artifactName = Task:
+    super.artifactName().replaceAll("-(jvm|js|native)$", "")
+
 /** Settings shared by every module built for several platforms. Sources go in
   * `<module>/src`, platform-only ones in `<module>/src-jvm`, `src-js`,
   * `src-native` (and the same under `<module>/test`).
@@ -42,7 +84,7 @@ def jsdomEnv = Task:
 
 object qtags extends Module:
 
-  trait Shared extends CrossPlatform:
+  trait Shared extends CrossPlatform, Publish:
     def mvnDeps = Seq(thirdparty.geny)
 
   // Shared sources:  qtags/src,  qtags/test/src
@@ -67,7 +109,10 @@ object qtags extends Module:
 
   // Reactive UI for Scala.js, in package qtags.sigs: signals (Signal.scala, which
   // does not depend on qtags) and DOM bindings for qtags fragments (ui.scala).
-  object sigs extends ScalaJSModule:
+  object sigs extends ScalaJSModule, Publish:
+    def pomSettings = super.pomSettings().copy(
+      description = "Reactive signals and DOM bindings for qtags, for Scala.js"
+    )
     def scalaVersion = scala3
     def scalaJSVersion = scalaJS
     def scalacOptions = qtags.js.scalacOptions
