@@ -51,6 +51,7 @@ TODO
 - [components](examples/components): building reusable components on top of
   qtags.
 - [rendering](examples/rendering): the different ways to render HTML.
+- [custom-backend](examples/custom-backend): rendering to your own backend.
 - [keg-server](examples/keg-server): using qtags in a web server.
 - [sigs-basic](examples/sigs-basic): basic usage of reactive signals in the
   browser.

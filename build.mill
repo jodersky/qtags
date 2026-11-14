@@ -90,6 +90,7 @@ object bench extends ScalaModule, JmhModule:
 // Examples (each has a README):
 //   ./mill examples.components.run > demo.html   a page using a small component library
 //   ./mill examples.rendering.run                renderString, render and renderLazy
+//   ./mill examples.custom-backend.run           a pretty-printing and a tree-building backend
 //   ./mill examples.keg-server.run               a keg app at http://localhost:8080
 //   ./mill show examples.sigs-basic.site         signals basics in the browser (Scala.js);
 //                                                open index.html in the printed directory
@@ -105,6 +106,9 @@ object examples extends Module:
     def moduleDeps = Seq(qtags.jvm)
 
   object rendering extends Example:
+    def moduleDeps = Seq(qtags.jvm)
+
+  object `custom-backend` extends Example:
     def moduleDeps = Seq(qtags.jvm)
 
   object `keg-server` extends Example:
