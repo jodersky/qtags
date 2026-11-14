@@ -22,13 +22,12 @@ an output, which is passed along as a context parameter. That keeps it fast
 (4–5× faster than scalatags; see [Performance](#performance)) and lets
 ordinary Scala `for`, `if` and `match` appear anywhere in a page.
 
-The repository has three libraries:
+The repository has two modules:
 
 | Module | What it is | Platforms |
 |---|---|---|
 | [`qtags`](qtags/src) | the HTML DSL, rendering to strings, streams or the DOM | JVM, Scala.js, Scala Native |
-| [`sigs`](sigs/src) | reactive signals, in the style of the [JavaScript signals proposal](https://github.com/tc39/proposal-signals) | JVM, Scala.js, Scala Native |
-| [`reactive`](reactive/src) | a reactive DOM: qtags views that update when signals change | Scala.js |
+| [`qtags.sigs`](qtags/sigs/src) | a reactive UI: signals, and qtags views that update when they change | Scala.js |
 
 ## qtags
 
@@ -108,46 +107,18 @@ renderInto(dom.document.body) {
 }
 ```
 
-## sigs
+## Reactive UI: qtags.sigs
 
-Signals are values that change over time. A `Computed` derives its value from
-other signals, and tracks which ones it read, so it is recomputed only when
-they change:
-
-```scala
-import sigs.Signal
-
-val first = Signal.State("Ada")
-val last  = Signal.State("Lovelace")
-val full  = Signal.Computed { s"${first()} ${last()}" }   // s() reads and tracks s
-
-val w = Signal.Watcher(() => println(full.now), full)
-last.set("Byron")    // prints "Ada Byron"
-w.dispose()
-```
-
-- Reading with `s()` only compiles inside a `Computed`; use `s.now` anywhere
-  else.
-- Computeds are lazy, cached, and stop propagating when they recompute to an
-  equal value. Changes are glitch-free: nothing ever sees a mix of old and new
-  values.
-- A `Watcher` runs a callback after its signal changes. Only watched signals
-  are linked to their sources, so unwatched ones can be garbage collected.
-- `Signal.batch { ... }` groups several changes into one notification.
-- `map`, `flatMap` and `zip` combine signals, and work in for-comprehensions:
-  `for a <- x; b <- y yield a + b`.
-
-## reactive
-
-`reactive` renders qtags views into the DOM and keeps them up to date. Updates
-are fine-grained, with no virtual DOM: each binding updates exactly the DOM it
-created when its signal changes.
+`qtags.sigs` renders qtags views into the browser's DOM, and keeps them up to
+date as the application's state changes. It is two things in one package:
+signals, which model the state ([Signal.scala](qtags/sigs/src/Signal.scala), not
+tied to qtags), and bindings between signals and the DOM
+([ui.scala](qtags/sigs/src/ui.scala)).
 
 ```scala
 import org.scalajs.dom
 import qtags.*
-import reactive.*
-import sigs.Signal.State
+import qtags.sigs.*
 
 val count = State(0)
 
@@ -157,16 +128,56 @@ mount(dom.document.body) {
 }
 ```
 
+### Signals
+
+Signals are values that change over time, in the style of the
+[JavaScript signals proposal](https://github.com/tc39/proposal-signals). There
+are three primitives: `State` holds a value, `Computed` derives one from other
+signals, and `observe` runs a side effect whenever the signals it uses change.
+
+```scala
+val first = State("Ada")
+val last  = State("Lovelace")
+val full  = Computed { s"${first()} ${last()}" }   // s() reads and tracks s
+
+val o = observe { println(full()) }   // prints "Ada Lovelace" now...
+last.set("Byron")                     // ...and "Ada Byron" after each change
+o.dispose()
+```
+
+- Reading with `s()` only compiles inside a `Computed` or `observe` block, and
+  records a dependency; use `s.now` anywhere else.
+- Computeds are lazy, cached, and stop propagating when they recompute to an
+  equal value. Changes are glitch-free: nothing ever sees a mix of old and new
+  values.
+- `observe` runs immediately, then again after each change to what it read.
+  Observers created inside another observer's run belong to that run, and are
+  disposed before it runs again; `Signal.scope { ... }` groups observers whose
+  lifetime spans several runs. Only observed signals are linked to their
+  sources, so nothing else can leak.
+- `batch { ... }` groups several changes into one notification.
+- `map`, `flatMap` and `zip` combine signals, and work in for-comprehensions:
+  `for a <- x; b <- y yield a + b`.
+
+Signals are single-threaded, as a browser UI is.
+
+### Binding signals to the DOM
+
+Updates are fine-grained, with no virtual DOM: each binding updates exactly the
+DOM it created when its signal changes.
+
 | | |
 |---|---|
 | `bindText(sig)` | a text node kept equal to `sig` |
 | `bindAttr(name, sig)`, `bindProp(name, sig)` | an attribute or DOM property (such as `checked`) of the enclosing element |
 | `each(items, key) { (key, item) => ... }` | a keyed list. Items that stay keep their DOM, and each gets a signal of its current value |
-| `dyn { ... }` | a region, re-rendered when the signals it reads change (for `if`s and the like) |
-| `mount(parent)(view)` | renders a view; `dispose()` removes it and stops all its bindings |
+| `dyn(sig) { value => ... }` | a region, re-rendered when `sig` changes (for `if`s and the like) |
+| `mount(parent)(view)` | renders a view and returns its scope; disposing that removes the view and stops all its bindings |
 
-Everything a region creates is disposed when the region is re-rendered or
-removed, so removed DOM is never kept alive by the signals it watched.
+Each binding is an observer belonging to the region it was created in, so it is
+disposed when the region is re-rendered or removed, and removed DOM is never
+kept alive by the signals it observed. Bindings must be created while rendering
+inside `mount`; elsewhere they throw.
 [`examples/todomvc`](examples/todomvc/src/todomvc/App.scala) is a complete
 [TodoMVC](https://todomvc.com).
 

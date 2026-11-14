@@ -2,10 +2,8 @@ package qtags
 
 import org.scalajs.dom
 
-/** Backend that builds real DOM nodes under `root`. Open for extension, e.g.
-  * by backends that also track reactive bindings.
-  */
-open class DomHtml(root: dom.Node) extends Html:
+/** Backend that builds real DOM nodes under `root`. */
+final class DomHtml(root: dom.Node) extends Html:
   private var stack: List[dom.Node] = List(root)
   private var tagOpen = false            // same attr-ordering rule as StringHtml
 

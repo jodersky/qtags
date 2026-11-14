@@ -1,19 +1,25 @@
-package sigs
+package qtags.sigs
 
+import scala.util.Try
 import utest.*
 
 object SignalTest extends TestSuite:
-  import Signal.{Computed, State, Watcher}
+  import Signal.{Computed, Scope, State, observe}
 
   /** A computed that counts its evaluations. */
   class Counted[A](f: Computed[A] ?=> A):
     var runs = 0
     val sig = Computed[A] { runs += 1; f }
 
-  /** A watcher that records the upstream value each time it fires. */
-  def record[A](s: Signal[A]): (Watcher, collection.mutable.Buffer[A]) =
+  /** Observes `s`, recording each new value (not the initial one). */
+  def record[A](s: Signal[A]): (Scope, collection.mutable.Buffer[A]) =
     val seen = collection.mutable.Buffer.empty[A]
-    (Watcher(() => seen += s.now, s), seen)
+    var first = true
+    val o = observe {
+      val v = s()
+      if first then first = false else seen += v
+    }
+    (o, seen)
 
   val tests = Tests:
 
@@ -81,16 +87,16 @@ object SignalTest extends TestSuite:
       s.set("A")
       assert(s.now == "a", seen.isEmpty)
 
-    test("watcher: fires after each change, can read the new value"):
+    test("observer: runs after each change, can read the new value"):
       val a = State(1)
       val doubled = Computed { a() * 2 }
       val (w, seen) = record(doubled)
-      assert(seen.isEmpty)                     // not on creation
+      assert(seen.isEmpty)
       a.set(2)
       a.set(3)
       assert(seen == Seq(4, 6))
 
-    test("watcher: dispose unlinks the whole chain"):
+    test("observer: dispose unlinks the whole chain"):
       val a = State(1)
       val b = Computed { a() + 1 }
       val c = Computed { b() + 1 }
@@ -101,7 +107,7 @@ object SignalTest extends TestSuite:
       a.set(5)
       assert(seen.isEmpty, c.now == 7)         // still correct when read
 
-    test("watcher: shared upstream stays linked until the last watcher goes"):
+    test("observer: shared upstream stays linked until the last observer goes"):
       val a = State(1)
       val c = Computed { a() + 1 }
       val (w1, _) = record(c)
@@ -112,10 +118,10 @@ object SignalTest extends TestSuite:
       w2.dispose()
       assert(a.consumers.isEmpty)
 
-    test("watcher can set state; the follow-up change is delivered too"):
+    test("observer can set state; the follow-up change is delivered too"):
       val a = State(0)
       val b = State(0)
-      Watcher(() => b.set(a.now * 10), a)
+      observe { b.set(a() * 10) }
       val (_, seenB) = record(b)
       a.set(1)
       a.set(2)
@@ -141,13 +147,13 @@ object SignalTest extends TestSuite:
       a.set(5)
       assert(c.sig.now == 2)
 
-    test("watched computed recovers from failure"):
+    test("observed computed recovers from failure"):
       val a = State(0)
       val c = Computed { 10 / a() }
-      var fired = 0
-      Watcher(() => fired += 1, c)
+      var results = Seq.empty[Try[Int]]
+      observe { results :+= Try(c()) }
       a.set(2)
-      assert(fired == 1, c.now == 5)
+      assert(results.map(_.isSuccess) == Seq(false, true), c.now == 5)
 
     test("cycles are detected"):
       lazy val c: Computed[Int] = Computed { c() + 1 }
@@ -171,7 +177,7 @@ object SignalTest extends TestSuite:
       val a = State(1)
       val b = State(1)
       val c = Counted { a() + b.now }
-      Watcher(() => (), c.sig)
+      observe { c.sig() }
       b.set(2)
       assert(c.runs == 1, c.sig.now == 2)      // stale value of b, by design
       a.set(2)
@@ -226,3 +232,82 @@ object SignalTest extends TestSuite:
       a.set(2)
       assert(seenSum == Seq(21, 22), seenPair == Seq((1, 20), (2, 20)))
 
+
+    test("observe: runs now, and again on each change"):
+      val a = State(1)
+      var seen = Seq.empty[Int]
+      val o = observe { seen :+= a() }
+      a.set(2)
+      a.set(2)                                 // equal: no re-run
+      assert(seen == Seq(1, 2))
+      o.dispose()
+      a.set(3)
+      assert(seen == Seq(1, 2), a.consumers.isEmpty)
+
+    test("observe: tracks several signals, dynamically"):
+      val flag = State(true)
+      val a = State("a")
+      val b = State("b")
+      var seen = Seq.empty[String]
+      observe { seen :+= (if flag() then a() else b()) }
+      b.set("b2")                              // not read in the last run
+      assert(seen == Seq("a"))
+      flag.set(false)
+      a.set("a2")                              // no longer read
+      assert(seen == Seq("a", "b2"), a.consumers.isEmpty)
+
+    test("observe: re-runs only when what it read changed value"):
+      val a = State(1)
+      val parity = Computed { a() % 2 }
+      var runs = 0
+      observe { parity(); runs += 1 }
+      a.set(3)
+      assert(runs == 1)
+
+    test("observe: disposes what its previous run created"):
+      val outer = State(0)
+      val inner = State(0)
+      var innerRuns = 0
+      var cleanups = 0
+      observe {
+        outer()
+        observe { inner(); innerRuns += 1 }
+        Signal.currentScope.foreach(_.onDispose(() => cleanups += 1))
+      }
+      assert(innerRuns == 1)
+      outer.set(1)                             // old inner observer disposed, new one created
+      assert(innerRuns == 2, cleanups == 1, inner.consumers.length == 1)
+      inner.set(1)                             // only the current inner observer runs
+      assert(innerRuns == 3)
+
+    test("scope: disposes everything created inside it"):
+      val a = State(0)
+      var runs = 0
+      var cleanedUp = false
+      val s = Signal.scope {
+        observe { a(); runs += 1 }
+        observe { a(); runs += 100 }
+        Signal.currentScope.foreach(_.onDispose(() => cleanedUp = true))
+      }
+      a.set(1)
+      assert(runs == 202)
+      s.dispose()
+      a.set(2)
+      assert(runs == 202, cleanedUp, a.consumers.isEmpty)
+
+    test("scope.run adds to an existing scope; nested scopes belong to it"):
+      val a = State(0)
+      var runs = 0
+      val outer = Signal.scope {}
+      outer.run { Signal.scope { observe { a(); runs += 1 } } }
+      outer.dispose()
+      a.set(1)
+      assert(runs == 1, a.consumers.isEmpty)
+
+    test("outside any scope, observers belong to nothing and keep running"):
+      assert(Signal.currentScope.isEmpty)
+      val a = State(0)
+      var runs = 0
+      observe { a(); runs += 1 }
+      a.set(1)
+      assert(runs == 2)

@@ -1,11 +1,10 @@
-package reactive
+package qtags.sigs
 
 import org.scalajs.dom
 import qtags.*
-import sigs.Signal.{Computed, State}
 import utest.*
 
-object ReactiveTest extends TestSuite:
+object UiTest extends TestSuite:
 
   def newRoot(): dom.Element =
     dom.document.body.textContent = ""
@@ -46,7 +45,7 @@ object ReactiveTest extends TestSuite:
       done.set(true)
       assert(box.className == "done", box.checked)
 
-    test("dyn re-renders its region only when what it reads changes"):
+    test("dyn re-renders its region only when its signal changes"):
       val root = newRoot()
       val show = State(true)
       val other = State(0)
@@ -54,9 +53,9 @@ object ReactiveTest extends TestSuite:
       mount(root) {
         div {
           text("before ")
-          dyn {
+          dyn(show) { s =>
             renders += 1
-            if show() then strong { text("shown") } else em { text("hidden") }
+            if s then strong { text("shown") } else em { text("hidden") }
           }
           text(" after")
         }
@@ -73,8 +72,8 @@ object ReactiveTest extends TestSuite:
       val n = State(0)
       var runs = 0
       mount(root) {
-        dyn {
-          if show() then p { bindText(Computed { runs += 1; n().toString }) }
+        dyn(show) { s =>
+          if s then p { bindText(Computed { runs += 1; n().toString }) }
         }
       }
       n.set(1)
@@ -128,7 +127,7 @@ object ReactiveTest extends TestSuite:
       var runs = 0
       val m = mount(root) {
         p { text("x") }
-        dyn { if n() >= 0 then bindText(Computed { runs += 1; n().toString }) }
+        dyn(n) { _ => bindText(Computed { runs += 1; n().toString }) }
       }
       m.dispose()
       n.set(1)
@@ -158,6 +157,12 @@ object ReactiveTest extends TestSuite:
       n.set(2)
       items.set(Seq(3))
       assert(html(root) == """<p class="many">n = 2</p><span>30</span>""")
+
+    test("bindings outside mount throw"):
+      val n = State("x")
+      val root = newRoot()
+      assertThrows[IllegalStateException]:
+        qtags.renderInto(root) { p { bindText(n) } }
 
     test("reading a signal outside a tracked block does not compile"):
       val n = State(0)

@@ -71,33 +71,16 @@ object qtags extends Module:
     object test extends ScalaNativeTests, TestModule.Utest:
       def utestVersion = thirdparty.utestVersion
 
-// Reactive signals, in the style of the JavaScript signals proposal. No
-// dependencies (not even on qtags) for now.
-object sigs extends Module:
-  object jvm extends CrossPlatform:
-    object test extends ScalaTests, TestModule.Utest:
-      def utestVersion = thirdparty.utestVersion
-
-  object js extends CrossPlatform, ScalaJSModule:
+  // Reactive UI for Scala.js, in package qtags.sigs: signals (Signal.scala, which
+  // does not depend on qtags) and DOM bindings for qtags fragments (ui.scala).
+  object sigs extends ScalaJSModule:
+    def scalaVersion = scala3
     def scalaJSVersion = scalaJS
+    def scalacOptions = qtags.js.scalacOptions
+    def moduleDeps = Seq(qtags.js)
     object test extends ScalaJSTests, TestModule.Utest:
       def utestVersion = thirdparty.utestVersion
-      def jsEnvConfig = JsEnvConfig.NodeJs(executable = nodeExecutable())
-
-  object native extends CrossPlatform, ScalaNativeModule:
-    def scalaNativeVersion = scalaNative
-    object test extends ScalaNativeTests, TestModule.Utest:
-      def utestVersion = thirdparty.utestVersion
-
-// Reactive DOM: qtags' DOM backend with bindings to sigs signals (Scala.js only).
-object reactive extends ScalaJSModule:
-  def scalaVersion = scala3
-  def scalaJSVersion = scalaJS
-  def scalacOptions = qtags.js.scalacOptions
-  def moduleDeps = Seq(qtags.js, sigs.js)
-  object test extends ScalaJSTests, TestModule.Utest:
-    def utestVersion = thirdparty.utestVersion
-    def jsEnvConfig = jsdomEnv()
+      def jsEnvConfig = jsdomEnv()
 
 // JMH benchmarks comparing qtags with scalatags (JVM only).
 //   ./mill bench.runJmh                   run all benchmarks
@@ -129,7 +112,7 @@ object examples extends Module:
 
   object todomvc extends Example, ScalaJSModule:
     def scalaJSVersion = scalaJS
-    def moduleDeps = Seq(reactive)
+    def moduleDeps = Seq(qtags.sigs)
 
     def indexHtml = Task.Source("index.html")
 

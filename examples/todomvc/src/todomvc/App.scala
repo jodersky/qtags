@@ -2,10 +2,8 @@ package todomvc
 
 import org.scalajs.dom
 import qtags.*
-import reactive.*
+import qtags.sigs.*
 import scala.scalajs.js
-import sigs.Signal
-import sigs.Signal.{Computed, State, Watcher}
 
 /** TodoMVC (https://todomvc.com), rendered in the browser with qtags and
   * reactive signals.
@@ -51,14 +49,14 @@ class TodoApp(root: dom.Element, storage: Storage):
   private val editing = State(Option.empty[Int])
 
   // Derived values. Their equality cut-off matters: e.g. `hasTodos` only
-  // changes when the list becomes (non-)empty, so the `dyn` reading it does not
+  // changes when the list becomes (non-)empty, so the `dyn` on it does not
   // re-render on every edit.
-  private val hasTodos = Computed { todos().nonEmpty }
-  private val left = Computed { todos().count(!_.completed) }
-  private val anyCompleted = Computed { todos().exists(_.completed) }
+  private val hasTodos = todos.map(_.nonEmpty)
+  private val left = todos.map(_.count(!_.completed))
+  private val anyCompleted = todos.map(_.exists(_.completed))
   private val visible = Computed { todos().filter(filter().accepts) }
 
-  private val saver = Watcher(() => save(todos.now), todos)
+  private val saver = observe { save(todos()) }
 
   // ---- changes ----------------------------------------------------------------
 
@@ -104,8 +102,8 @@ class TodoApp(root: dom.Element, storage: Storage):
       }
     }
 
-    dyn {
-      if hasTodos() then
+    dyn(hasTodos) { has =>
+      if has then
         section {
           cls("main")
           input {
@@ -126,7 +124,7 @@ class TodoApp(root: dom.Element, storage: Storage):
     }
   }
 
-  private def item(id: Int, todo: Signal[Todo]): View =
+  private def item(id: Int, todo: Signal[Todo]): DomFrag =
     li {
       bindAttr("class", Computed {
         Seq("completed" -> todo().completed, "editing" -> editing().contains(id))
@@ -164,7 +162,7 @@ class TodoApp(root: dom.Element, storage: Storage):
       }
     }
 
-  private def footerView: View =
+  private def footerView: DomFrag =
     footer {
       cls("footer")
       span {
@@ -183,8 +181,8 @@ class TodoApp(root: dom.Element, storage: Storage):
             }
           }
       }
-      dyn {
-        if anyCompleted() then
+      dyn(anyCompleted) { any =>
+        if any then
           button {
             cls("clear-completed")
             text("Clear completed")
