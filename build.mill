@@ -48,28 +48,22 @@ object qtags extends Module:
   // Shared sources:  qtags/src,  qtags/test/src
   // JVM-only:        qtags/src-jvm
   object jvm extends Shared:
-    def mvnDeps = super.mvnDeps() ++ Seq(
-      thirdparty.clip,
-      thirdparty.ustats,
-      thirdparty.oslib,
-      thirdparty.keg
-    )
     object test extends ScalaTests, TestModule.Utest:
-      def utestVersion = thirdparty.utestVersion
+      def mvnDeps = Seq(thirdparty.utest)
 
   // JS-only:         qtags/src-js,  qtags/test/src-js
   object js extends Shared, ScalaJSModule:
     def scalaJSVersion = scalaJS
     def mvnDeps = super.mvnDeps() ++ Seq(thirdparty.scalajsDom)
     object test extends ScalaJSTests, TestModule.Utest:
-      def utestVersion = thirdparty.utestVersion
+      def mvnDeps = Seq(thirdparty.utest)
       def jsEnvConfig = jsdomEnv()
 
   // Native-only:     qtags/src-native,  qtags/test/src-native
   object native extends Shared, ScalaNativeModule:
     def scalaNativeVersion = scalaNative
     object test extends ScalaNativeTests, TestModule.Utest:
-      def utestVersion = thirdparty.utestVersion
+      def mvnDeps = Seq(thirdparty.utest)
 
   // Reactive UI for Scala.js, in package qtags.sigs: signals (Signal.scala, which
   // does not depend on qtags) and DOM bindings for qtags fragments (ui.scala).
@@ -79,7 +73,7 @@ object qtags extends Module:
     def scalacOptions = qtags.js.scalacOptions
     def moduleDeps = Seq(qtags.js)
     object test extends ScalaJSTests, TestModule.Utest:
-      def utestVersion = thirdparty.utestVersion
+      def mvnDeps = Seq(thirdparty.utest)
       def jsEnvConfig = jsdomEnv()
 
 // JMH benchmarks comparing qtags with scalatags (JVM only).
@@ -93,10 +87,14 @@ object bench extends ScalaModule, JmhModule:
   def moduleDeps = Seq(qtags.jvm)
   def mvnDeps = super.mvnDeps() ++ Seq(thirdparty.scalatags)
 
-// Examples:
+// Examples (each has a README):
 //   ./mill examples.components.run > demo.html   a page using a small component library
-//   ./mill examples.server.run                   a keg app at http://localhost:8080
-//   ./mill show examples.todomvc.site            TodoMVC in the browser (Scala.js); open
+//   ./mill examples.rendering.run                renderString, render and renderLazy
+//   ./mill examples.keg-server.run               a keg app at http://localhost:8080
+//   ./mill show examples.sigs-basic.site         signals basics in the browser (Scala.js);
+//                                                open index.html in the printed directory
+//   ./mill show examples.sigs-multi.site         counters added and removed at run time
+//   ./mill show examples.sigs-todomvc.site       TodoMVC in the browser (Scala.js); open
 //                                                index.html in the printed directory
 object examples extends Module:
   trait Example extends ScalaModule:
@@ -106,11 +104,15 @@ object examples extends Module:
   object components extends Example:
     def moduleDeps = Seq(qtags.jvm)
 
-  object server extends Example:
+  object rendering extends Example:
+    def moduleDeps = Seq(qtags.jvm)
+
+  object `keg-server` extends Example:
     def moduleDeps = Seq(examples.components)
     def mvnDeps = Seq(thirdparty.keg)
 
-  object todomvc extends Example, ScalaJSModule:
+  /** A Scala.js app using qtags.sigs, with an index.html to open it in a browser. */
+  trait BrowserExample extends Example, ScalaJSModule:
     def scalaJSVersion = scalaJS
     def moduleDeps = Seq(qtags.sigs)
 
@@ -122,6 +124,17 @@ object examples extends Module:
       os.copy(fastLinkJS().dest.path / "main.js", Task.dest / "main.js")
       PathRef(Task.dest)
 
+  object `sigs-basic` extends BrowserExample:
     object test extends ScalaJSTests, TestModule.Utest:
-      def utestVersion = thirdparty.utestVersion
+      def mvnDeps = Seq(thirdparty.utest)
+      def jsEnvConfig = jsdomEnv()
+
+  object `sigs-multi` extends BrowserExample:
+    object test extends ScalaJSTests, TestModule.Utest:
+      def mvnDeps = Seq(thirdparty.utest)
+      def jsEnvConfig = jsdomEnv()
+
+  object `sigs-todomvc` extends BrowserExample:
+    object test extends ScalaJSTests, TestModule.Utest:
+      def mvnDeps = Seq(thirdparty.utest)
       def jsEnvConfig = jsdomEnv()

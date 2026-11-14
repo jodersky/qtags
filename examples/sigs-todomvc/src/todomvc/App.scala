@@ -1,17 +1,17 @@
 package todomvc
 
 import org.scalajs.dom
-import qtags.*
-import qtags.sigs.*
+import qtags as h
+import qtags.sigs
 import scala.scalajs.js
 
 /** TodoMVC (https://todomvc.com), rendered in the browser with qtags and
   * reactive signals.
   *
   * The state is a few signals. The view is rendered once; after that, each
-  * change updates only the DOM that depends on it: `bindText`/`bindAttr`/
-  * `bindProp` keep single nodes equal to a signal, `dyn` re-renders a region,
-  * and `each` keeps one element per todo, matched by id. Elements are never needlessly
+  * change updates only the DOM that depends on it: `sigs.bindText`/`bindAttr`/
+  * `bindProp` keep single nodes equal to a signal, `sigs.dyn` re-renders a
+  * region, and `sigs.each` keeps one element per todo, matched by id. Elements are never needlessly
   * replaced, so focus and cursor position are kept.
   */
 
@@ -44,9 +44,9 @@ class TodoApp(root: dom.Element, storage: Storage):
 
   // ---- state ------------------------------------------------------------------
 
-  val todos = State(load())
-  val filter = State(Filter.All)
-  private val editing = State(Option.empty[Int])
+  val todos = sigs.State(load())
+  val filter = sigs.State(Filter.All)
+  private val editing = sigs.State(Option.empty[Int])
 
   // Derived values. Their equality cut-off matters: e.g. `hasTodos` only
   // changes when the list becomes (non-)empty, so the `dyn` on it does not
@@ -54,9 +54,9 @@ class TodoApp(root: dom.Element, storage: Storage):
   private val hasTodos = todos.map(_.nonEmpty)
   private val left = todos.map(_.count(!_.completed))
   private val anyCompleted = todos.map(_.exists(_.completed))
-  private val visible = Computed { todos().filter(filter().accepts) }
+  private val visible = sigs.Computed { todos().filter(filter().accepts) }
 
-  private val saver = observe { save(todos()) }
+  private val saver = sigs.observe { save(todos()) }
 
   // ---- changes ----------------------------------------------------------------
 
@@ -79,7 +79,7 @@ class TodoApp(root: dom.Element, storage: Storage):
   /** Save an edit. Called on Enter and on blur; whichever comes second is a no-op. */
   private def commitEdit(id: Int, title: String): Unit =
     if editing.now.contains(id) then
-      Signal.batch {
+      sigs.batch {
         editing.set(None)
         val t = title.trim
         if t.isEmpty then remove(id) else modify(id)(_.copy(title = t))
@@ -87,13 +87,13 @@ class TodoApp(root: dom.Element, storage: Storage):
 
   // ---- view -------------------------------------------------------------------
 
-  private val mounted = mount(root) {
-    header {
-      cls("header")
-      h1 { text("todos") }
-      input {
-        cls("new-todo"); placeholder("What needs to be done?"); autofocus
-        on("keydown") { e =>
+  private val mounted = sigs.mount(root) {
+    h.header {
+      h.cls("header")
+      h.h1 { h.text("todos") }
+      h.input {
+        h.cls("new-todo"); h.placeholder("What needs to be done?"); h.autofocus
+        h.on("keydown") { e =>
           if key(e) == "Enter" then
             val field = target(e)
             add(field.value)
@@ -102,91 +102,91 @@ class TodoApp(root: dom.Element, storage: Storage):
       }
     }
 
-    dyn(hasTodos) { has =>
+    sigs.dyn(hasTodos) { has =>
       if has then
-        section {
-          cls("main")
-          input {
-            id("toggle-all"); cls("toggle-all"); tpe("checkbox")
-            bindProp("checked", left.map(_ == 0))
-            on("change") { e =>
+        h.section {
+          h.cls("main")
+          h.input {
+            h.id("toggle-all"); h.cls("toggle-all"); h.tpe("checkbox")
+            sigs.bindProp("checked", left.map(_ == 0))
+            h.on("change") { e =>
               val completed = target(e).checked
               todos.update(_.map(_.copy(completed = completed)))
             }
           }
-          label { `for`("toggle-all"); text("Mark all as complete") }
-          ul {
-            cls("todo-list")
-            each(visible, _.id) { (id, todo) => item(id, todo) }
+          h.label { h.`for`("toggle-all"); h.text("Mark all as complete") }
+          h.ul {
+            h.cls("todo-list")
+            sigs.each(visible, _.id) { (id, todo) => item(id, todo) }
           }
         }
         footerView
     }
   }
 
-  private def item(id: Int, todo: Signal[Todo]): DomFrag =
-    li {
-      bindAttr("class", Computed {
+  private def item(id: Int, todo: sigs.Signal[Todo]): h.DomFrag =
+    h.li {
+      sigs.bindAttr("class", sigs.Computed {
         Seq("completed" -> todo().completed, "editing" -> editing().contains(id))
           .collect { case (c, true) => c }.mkString(" ")
       })
-      div {
-        cls("view")
-        input {
-          cls("toggle"); tpe("checkbox")
-          bindProp("checked", todo.map(_.completed))
-          on("change") { _ => modify(id)(t => t.copy(completed = !t.completed)) }
+      h.div {
+        h.cls("view")
+        h.input {
+          h.cls("toggle"); h.tpe("checkbox")
+          sigs.bindProp("checked", todo.map(_.completed))
+          h.on("change") { _ => modify(id)(t => t.copy(completed = !t.completed)) }
         }
-        label {
-          bindText(todo.map(_.title))
-          on("dblclick") { e =>
+        h.label {
+          sigs.bindText(todo.map(_.title))
+          h.on("dblclick") { e =>
             val li = e.target.asInstanceOf[dom.Element].closest("li")
             startEdit(id, li.querySelector(".edit").asInstanceOf[dom.HTMLInputElement])
           }
         }
-        button {
-          cls("destroy")
-          on("click") { _ => remove(id) }
+        h.button {
+          h.cls("destroy")
+          h.on("click") { _ => remove(id) }
         }
       }
       // Always present; the stylesheet only shows it while the item is editing.
-      input {
-        cls("edit")
-        on("keydown") { e =>
+      h.input {
+        h.cls("edit")
+        h.on("keydown") { e =>
           key(e) match
             case "Enter"  => commitEdit(id, target(e).value)
             case "Escape" => editing.set(None)
             case _        =>
         }
-        on("blur") { e => commitEdit(id, target(e).value) }
+        h.on("blur") { e => commitEdit(id, target(e).value) }
       }
     }
 
-  private def footerView: DomFrag =
-    footer {
-      cls("footer")
-      span {
-        cls("todo-count")
-        strong { bindText(left.map(_.toString)) }
-        bindText(left.map(n => if n == 1 then " item left" else " items left"))
+  private def footerView: h.DomFrag =
+    h.footer {
+      h.cls("footer")
+      h.span {
+        h.cls("todo-count")
+        h.strong { sigs.bindText(left.map(_.toString)) }
+        sigs.bindText(left.map(n => if n == 1 then " item left" else " items left"))
       }
-      ul {
-        cls("filters")
+      h.ul {
+        h.cls("filters")
         for f <- Filter.values do
-          li {
-            a {
-              href(f.hash)
-              bindAttr("class", filter.map(current => if current == f then "selected" else ""))
-              text(f.label)
+          h.li {
+            h.a {
+              h.href(f.hash)
+              sigs.bindAttr("class", filter.map(current => if current == f then "selected" else ""))
+              h.text(f.label)
             }
           }
       }
-      dyn(anyCompleted) { any =>
+      sigs.dyn(anyCompleted) { any =>
         if any then
-          button {
-            cls("clear-completed")
-            text("Clear completed")
-            on("click") { _ => todos.update(_.filterNot(_.completed)) }
+          h.button {
+            h.cls("clear-completed")
+            h.text("Clear completed")
+            h.on("click") { _ => todos.update(_.filterNot(_.completed)) }
           }
       }
     }

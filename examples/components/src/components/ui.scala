@@ -1,13 +1,12 @@
 package components
 
-import qtags.*
+import qtags as h
 
 /** A small component library built on qtags.
   *
-  * Components are plain functions that return a `Frag`. They live in an object
-  * so they can reuse tag names (`ui.button`, `ui.table`) without clashing with
-  * qtags' own tags: callers write `ui.card(...)`, and inside this object the
-  * plain tags are reached through `tags.button` etc.
+  * Components are plain functions that return an `h.Frag`. They live in an
+  * object, so callers write `ui.card(...)`, `ui.button(...)`, next to qtags'
+  * own `h.button`, `h.table` etc.
   *
   * Patterns shown here:
   *   - `page`:          a full-page layout with a content block
@@ -30,91 +29,91 @@ object ui:
   /** A complete HTML document: doctype, head with this library's CSS, an
     * optional navigation bar, and `content` as the main section.
     */
-  def page(pageTitle: String, links: Seq[(String, String)] = Nil)(content: Frag): Frag =
-    doctype
-    html {
-      lang("en")
-      head {
-        meta { charset("utf-8") }
-        meta { name("viewport"); attrs.content("width=device-width, initial-scale=1") }
-        tags.title { text(pageTitle) }
-        tags.style { raw(stylesheet) }
+  def page(pageTitle: String, links: Seq[(String, String)] = Nil)(content: h.Frag): h.Frag =
+    h.doctype
+    h.html {
+      h.lang("en")
+      h.head {
+        h.meta { h.charset("utf-8") }
+        h.meta { h.name("viewport"); h.content("width=device-width, initial-scale=1") }
+        h.tags.title { h.text(pageTitle) }
+        h.tags.style { h.raw(stylesheet) }
       }
-      body {
+      h.body {
         if links.nonEmpty then navbar(links)
-        main {
-          cls("container")
-          h1 { text(pageTitle) }
+        h.main {
+          h.cls("container")
+          h.h1 { h.text(pageTitle) }
           content
         }
       }
     }
 
-  def navbar(links: Seq[(String, String)]): Frag =
-    nav {
-      cls("navbar")
-      ul { for (label, url) <- links do li { a { href(url); text(label) } } }
+  def navbar(links: Seq[(String, String)]): h.Frag =
+    h.nav {
+      h.cls("navbar")
+      h.ul { for (label, url) <- links do h.li { h.a { h.href(url); h.text(label) } } }
     }
 
   /** A box with a heading. The block passed in becomes its body. */
-  def card(heading: String)(content: Frag): Frag =
-    section {
-      cls("card")
-      h2 { text(heading) }
+  def card(heading: String)(content: h.Frag): h.Frag =
+    h.section {
+      h.cls("card")
+      h.h2 { h.text(heading) }
       content
     }
 
-  def alert(tone: Tone)(content: Frag): Frag =
-    div {
-      cls("alert alert-" + tone.toString.toLowerCase)
-      attr("role", "alert")
+  def alert(tone: Tone)(content: h.Frag): h.Frag =
+    h.div {
+      h.cls("alert alert-" + tone.toString.toLowerCase)
+      h.attr("role", "alert")
       content
     }
 
   /** Several blocks of children: pass all but the last by name, e.g.
     * `ui.sidebarLayout(sidebar = { ... }) { ... }`.
     */
-  def sidebarLayout(sidebar: Frag)(content: Frag): Frag =
-    div {
-      cls("with-sidebar")
-      aside { sidebar }
-      div { content }
+  def sidebarLayout(sidebar: h.Frag)(content: h.Frag): h.Frag =
+    h.div {
+      h.cls("with-sidebar")
+      h.aside { sidebar }
+      h.div { content }
     }
 
-  /** A button. `extra` can add attributes, e.g. `ui.button("Save") { tpe("submit") }`.
+  /** A button. `extra` can add attributes, e.g. `ui.button("Save") { h.tpe("submit") }`.
     * It runs while the start tag is still open, so it may only set attributes,
     * and should not set `class` (the variant already does).
     */
-  def button(label: String, variant: Variant = Variant.Primary)(extra: Frag = ()): Frag =
-    tags.button {
-      cls(variant.classes)
+  def button(label: String, variant: Variant = Variant.Primary)(extra: h.Frag = ()): h.Frag =
+    h.button {
+      h.cls(variant.classes)
       extra
-      text(label)
+      h.text(label)
     }
 
   /** A column of `ui.table`: a header and how to render a row's cell. */
-  final case class Column[A](header: String, cell: A => Frag)
+  final case class Column[A](header: String, cell: A => h.Frag)
 
   /** A table with one row per element of `rows`. */
-  def table[A](rows: Seq[A])(columns: Column[A]*): Frag =
-    tags.table {
-      cls("table")
-      thead { tr { for c <- columns do th { text(c.header) } } }
-      tbody {
+  def table[A](rows: Seq[A])(columns: Column[A]*): h.Frag =
+    h.table {
+      h.cls("table")
+      h.thead { h.tr { for c <- columns do h.th { h.text(c.header) } } }
+      h.tbody {
         for row <- rows do
-          tr { for c <- columns do td { c.cell(row) } }
+          h.tr { for c <- columns do h.td { c.cell(row) } }
       }
     }
 
   /** A labelled text input. */
-  def textField(fieldName: String, labelText: String, placeholderText: String = ""): Frag =
+  def textField(fieldName: String, labelText: String, placeholderText: String = ""): h.Frag =
     val fieldId = "field-" + fieldName
-    div {
-      cls("field")
-      label { `for`(fieldId); text(labelText) }
-      input {
-        tpe("text"); id(fieldId); name(fieldName)
-        if placeholderText.nonEmpty then placeholder(placeholderText)
+    h.div {
+      h.cls("field")
+      h.label { h.`for`(fieldId); h.text(labelText) }
+      h.input {
+        h.tpe("text"); h.id(fieldId); h.name(fieldName)
+        if placeholderText.nonEmpty then h.placeholder(placeholderText)
       }
     }
 
