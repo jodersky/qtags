@@ -8,7 +8,8 @@ final case class User(id: Int, name: String, email: String, admin: Boolean)
 /** Builds and renders the same page with both libraries: a page shell, a nav
   * list, and a table with one row per user. Some names contain `&` or `<`, so
   * escaping is exercised. Both libraries build the page from scratch on every
-  * call, as a server does per request.
+  * call and write it out as UTF-8 bytes, as a server does per request: each
+  * page is a `geny.Writable`, the type web servers such as cask take.
   */
 object Pages:
   val navItems = Seq("Home" -> "/", "Users" -> "/users", "Settings" -> "/settings")
@@ -19,9 +20,9 @@ object Pages:
       User(i, name, s"user$i@example.com", i % 7 == 0)
     )
 
-  def qtagsPage(users: Seq[User]): String =
+  def qtagsPage(users: Seq[User]): geny.Writable =
     import qtags.*
-    renderString {
+    render {
       doctype
       html {
         head {
@@ -58,7 +59,17 @@ object Pages:
       }
     }
 
-  def scalatagsPage(users: Seq[User]): String =
+  /** scalatags' frags are `geny.Writable`s too, but their `writeBytesTo` is
+    * slow: it allocates over twice as much as rendering to a String and
+    * encoding that. So this uses the faster way.
+    */
+  def scalatagsPage(users: Seq[User]): geny.Writable =
+    val page = scalatagsTree(users)
+    new geny.Writable:
+      def writeBytesTo(out: java.io.OutputStream): Unit =
+        out.write(page.render.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+
+  def scalatagsTree(users: Seq[User]) =
     import scalatags.Text.all.*
     import scalatags.Text.tags2
     doctype("html")(
@@ -90,7 +101,15 @@ object Pages:
           )
         )
       )
-    ).render
+    )
+
+  /** Write `page` as a server would, to a stream that discards the bytes. */
+  def send(page: geny.Writable): Unit = page.writeBytesTo(java.io.OutputStream.nullOutputStream())
+
+  def bytes(page: geny.Writable): Array[Byte] =
+    val out = java.io.ByteArrayOutputStream()
+    page.writeBytesTo(out)
+    out.toByteArray
 
 @State(Scope.Benchmark)
 @BenchmarkMode(Array(Mode.AverageTime))
@@ -99,7 +118,7 @@ object Pages:
 @Measurement(iterations = 5, time = 1)
 @Fork(2)
 class PageBench:
-  @Param(Array("10", "100", "1000"))
+  @Param(Array("10", "100", "1000", "10000"))
   var rows: Int = 0
 
   var users: Seq[User] = Nil
@@ -109,11 +128,26 @@ class PageBench:
     users = Pages.users(rows)
     // Make sure both libraries do the same work. The only accepted difference
     // is that scalatags closes void elements XHTML-style (`<meta ... />`).
-    val q = Pages.qtagsPage(users)
-    val s = Pages.scalatagsPage(users).replace(" />", ">")
+    val q = String(Pages.bytes(Pages.qtagsPage(users)), "UTF-8")
+    val s = String(Pages.bytes(Pages.scalatagsPage(users)), "UTF-8").replace(" />", ">")
     if q != s then
       throw IllegalStateException(s"outputs differ:\nqtags:     $q\nscalatags: $s")
 
-  @Benchmark def qtags: String = Pages.qtagsPage(users)
+  @Benchmark def qtags: Unit = Pages.send(Pages.qtagsPage(users))
 
-  @Benchmark def scalatags: String = Pages.scalatagsPage(users)
+  @Benchmark def scalatags: Unit = Pages.send(Pages.scalatagsPage(users))
+
+/** Prints the size in bytes (UTF-8) of each library's page for each number of
+  * rows given, as JSON: `{"10": {"qtags": 1234, "scalatags": 1240}, ...}`.
+  * scripts/bench subtracts it from the allocations: a page can't be rendered
+  * with less memory than the page itself takes.
+  */
+object PageSizes:
+  def main(args: Array[String]): Unit =
+    def size(page: geny.Writable) = Pages.bytes(page).length
+    val entries = args.map: rows =>
+      val users = Pages.users(rows.toInt)
+      val q = size(Pages.qtagsPage(users))
+      val s = size(Pages.scalatagsPage(users))
+      s"\"$rows\": {\"qtags\": $q, \"scalatags\": $s}"
+    println(entries.mkString("{", ", ", "}"))

@@ -1,16 +1,9 @@
 package qtags
 
-/** Backend that writes HTML text into a StringBuilder.
-  *
-  * For streaming, pass `flushAt` and `flush`: after an element is closed, once
-  * `out` holds at least `flushAt` chars, `flush(out)` is called and `out` is
-  * cleared. Flushing only happens between elements, never inside a start tag.
+/** Backend that writes HTML text into a StringBuilder. See also [[ByteHtml]],
+  * which writes UTF-8 bytes.
   */
-final class StringHtml(
-    out: java.lang.StringBuilder,
-    flushAt: Int = Int.MaxValue,
-    flush: java.lang.StringBuilder => Unit = null
-) extends Html:
+final class StringHtml(out: java.lang.StringBuilder) extends Html:
   private var tagOpen = false            // we've written "<div" but not ">"
 
   private def closeOpen(): Unit =
@@ -40,18 +33,11 @@ final class StringHtml(
   def close(name: String, end: String): Unit =
     closeOpen()
     out.append(end)
-    maybeFlush()
 
   def closeVoid(name: String): Unit =
     if !tagOpen then throw IllegalStateException(s"void element <$name> cannot have content")
     out.append('>')
     tagOpen = false
-    maybeFlush()
-
-  private def maybeFlush(): Unit =
-    if out.length >= flushAt then
-      flush(out)
-      out.setLength(0)
 
 // Escaping. Both scan for the first char needing escape and copy clean runs in
 // bulk, so the common case (nothing to escape) is a single append.

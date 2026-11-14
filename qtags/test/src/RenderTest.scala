@@ -63,6 +63,48 @@ object RenderTest extends TestSuite:
       assert(String(b, "UTF-8") == "<p>héllo</p>")
       assert(b.length == "<p>héllo</p>".length + 1)
 
+    test("render: length matches the bytes written, for any text"):
+      def check(f: Frag) =
+        val w = render(f)
+        val b = bytes(w)
+        assert(w.contentLength == Some(b.length.toLong))
+        b
+      // 1, 2, 3 and 4 byte UTF-8 sequences
+      assert(String(check(text("a é € 🙂")), "UTF-8") == "a é € 🙂")
+      // A surrogate pair split across the 8192-char chunks it is written in
+      val long = "x" * 8191 + "🙂" + "y" * 10
+      assert(String(check(text(long)), "UTF-8") == long)
+      // A lone surrogate is written as "?"
+      assert(String(check(text("a\uD83Db")), "UTF-8") == "a?b")
+
+    test("UTF-8 output matches the JDK's, also across chunk boundaries"):
+      val s = (0 until 300).map(i => Seq("a", "é", "€", "🙂", "\uD83D", "\uDE42", "&")(i * 7 % 13 % 7)).mkString
+      val expected = s.replace("&", "&amp;").getBytes("UTF-8").toSeq
+      assert(bytes(render(text(s))).toSeq == expected)
+      for chunk <- Seq(1, 4, 5, 7) do
+        assert(bytes(renderLazy(text(s), chunkSize = chunk)).toSeq == expected)
+
+    test("all backends write the same page and check the same rules"):
+      val page: Frag =
+        doctype
+        html {
+          body {
+            div { cls("a\"b&c"); id("x"); text("x < y & z é") }
+            p { text("a"); br(); img { attr("src", "x.png") } }
+            script { raw("if (a < b && c) {}") }
+          }
+        }
+      val s = renderString(page)
+      assert(String(bytes(render(page)), "UTF-8") == s)
+      assert(String(bytes(renderLazy(page, chunkSize = 3)), "UTF-8") == s)
+      for r <- Seq[Frag => Any](renderString, render, f => bytes(renderLazy(f))) do
+        assertThrows[IllegalStateException](r(div { text("x"); cls("late") }))
+        assertThrows[IllegalStateException](r(br { text("x") }))
+
+    test("render: can be written more than once"):
+      val w = render(p { text("héllo") })
+      assert(bytes(w).toSeq == bytes(w).toSeq)
+
     test("renderLazy: streams the same output"):
       // Big enough to flush many times; the emoji (a surrogate pair) makes sure
       // chunk boundaries don't break multi-char code points.

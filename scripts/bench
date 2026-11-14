@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Run the qtags vs scalatags benchmarks (bench/) and print a markdown table
+"""Run the qtags vs scalatags benchmarks (bench/) and print an HTML table (for the README)
 comparing time and allocation per rendered page.
 
+Allocation is shown as overhead: bytes allocated per page (JMH's
+gc.alloc.rate.norm) minus the size of the page itself in UTF-8.
+
 Usage: scripts/bench [JMH args...]
-  scripts/bench                      full run (~3 min)
+  scripts/bench                      full run (~4 min)
   scripts/bench -f1 -wi 3 -i 3       quicker, noisier run
   scripts/bench -p rows=1000         only one table size
 
@@ -24,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def run_jmh(jmh_args: list[str]) -> list[dict]:
     with tempfile.NamedTemporaryFile(prefix="qtags-bench.", suffix=".json") as results:
         subprocess.run(
-            ["./mill", "bench.runJmh", "-prof", "gc", "-rf", "json", "-rff", results.name, *jmh_args],
+            ["./mill", "bench.runJmh", "PageBench", "-prof", "gc", "-rf", "json", "-rff", results.name, *jmh_args],
             cwd=ROOT,
             stdout=sys.stderr,
             check=True,
@@ -34,40 +37,81 @@ def run_jmh(jmh_args: list[str]) -> list[dict]:
 
 def fmt_time(score: float, error: float, unit: str) -> str:
     unit = {"us/op": "µs", "ns/op": "ns", "ms/op": "ms"}.get(unit, unit)
+    if unit == "µs" and score >= 1000:  # 4618 µs -> 4.62 ms
+        score, error, unit = score / 1000, error / 1000, "ms"
     d = 0 if score >= 100 else 1 if score >= 10 else 2  # ~3 significant digits
     err = f" ± {error:.{d}f}" if error == error else ""  # NaN with too few samples
     return f"{score:.{d}f}{err} {unit}"
 
 
+def page_sizes(rows: list[int]) -> dict[int, dict[str, int]]:
+    """UTF-8 size of each library's page, for each number of rows."""
+    out = subprocess.run(
+        ["./mill", "--ticker", "false", "bench.runMain", "qtags.bench.PageSizes", *map(str, rows)],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        check=True,
+        text=True,
+    ).stdout
+    sizes = json.loads(out.strip().splitlines()[-1])
+    return {int(r): v for r, v in sizes.items()}
+
+
 def fmt_bytes(b: float | None) -> str:
-    return "n/a" if b is None else f"{b / 1000:.1f} KB"
+    if b is None:
+        return "n/a"
+    return f"{b / 1e6:.1f} MB" if b >= 1e6 else f"{b / 1000:.1f} KB"
 
 
 def table(runs: list[dict]) -> str:
-    data = defaultdict(dict)  # rows -> library -> result
+    data = defaultdict(dict)  # rows -> benchmark -> result
     for r in runs:
-        library = r["benchmark"].rsplit(".", 1)[1]
+        name = r["benchmark"].rsplit(".", 1)[1]
         pm = r["primaryMetric"]
-        data[int(r["params"]["rows"])][library] = {
+        data[int(r["params"]["rows"])][name] = {
             # JMH writes "NaN" (a string) as the error when there are too few samples
             "time": fmt_time(pm["score"], float(pm["scoreError"]), pm["scoreUnit"]),
             "score": pm["score"],
-            "alloc": fmt_bytes(r["secondaryMetrics"].get("gc.alloc.rate.norm", {}).get("score")),
+            "alloc": r["secondaryMetrics"].get("gc.alloc.rate.norm", {}).get("score"),
         }
+    sizes = page_sizes(sorted(data))
 
+    # Overhead: bytes allocated per page beyond the page itself, the least any
+    # library returning the page could allocate.
+    def overhead(rows: int, bench: str) -> float | None:
+        alloc = data[rows][bench]["alloc"]
+        return None if alloc is None else alloc - sizes[rows][bench]
+
+    # An HTML table, since Markdown tables can't group columns under a common
+    # header. GitHub renders it in a README.
     lines = [
-        "| rows | qtags | scalatags | speedup | qtags allocated | scalatags allocated |",
-        "|---:|---:|---:|---:|---:|---:|",
+        "<table>",
+        "<thead>",
+        '<tr><th rowspan="2">rows</th><th rowspan="2">page size</th>'
+        '<th colspan="3">CPU</th><th colspan="3">memory overhead</th></tr>',
+        "<tr><th>qtags</th><th>scalatags</th><th>speedup</th>"
+        "<th>qtags</th><th>scalatags</th><th>factor</th></tr>",
+        "</thead>",
+        "<tbody>",
     ]
     for rows in sorted(data):
         q, s = data[rows].get("qtags"), data[rows].get("scalatags")
         if q and s:
-            speedup = s["score"] / q["score"]
-            lines.append(
-                f"| {rows} | {q['time']} | {s['time']} | {speedup:.1f}× | {q['alloc']} | {s['alloc']} |"
-            )
+            qo, so = overhead(rows, "qtags"), overhead(rows, "scalatags")
+            factor = f"{so / qo:.1f}×" if qo and so is not None else "n/a"
+            cells = [
+                str(rows),
+                fmt_bytes(sizes[rows]["qtags"]),
+                q["time"],
+                s["time"],
+                f"{s['score'] / q['score']:.1f}×",
+                fmt_bytes(qo),
+                fmt_bytes(so),
+                factor,
+            ]
+            lines.append("<tr>" + "".join(f'<td align="right">{c}</td>' for c in cells) + "</tr>")
+    lines += ["</tbody>", "</table>"]
     return "\n".join(lines)
-
 
 if __name__ == "__main__":
     try:
