@@ -1,33 +1,36 @@
 # qtags
 
-HTML for Scala 3, written as plain code and built on context functions.
+HTML generation for Scala 3, written as plain code and built on context
+functions.
 
 ```scala
-import qtags.*
+import qtags as h
 
-renderString {
-  div {
-    cls("greeting")
-    h1 { text("Hello") }
-    ul { for name <- Seq("Ann", "Bob & co") do li { text(name) } }
+h.renderString {
+  h.div {
+    h.cls("greeting")
+    h.h1 { h.text("Hello") }
+    h.ul { for name <- Seq("Ann", "Bob & co") do h.li { h.text(name) } }
   }
 }
 // <div class="greeting"><h1>Hello</h1><ul><li>Ann</li><li>Bob &amp; co</li></ul></div>
 ```
 
-qtags is similar to [scalatags](https://github.com/com-lihaoyi/scalatags), but
-it builds no tree. Tags are `inline` functions taking a block; inside the
-block, attributes, text and child tags are statements that write straight to
-an output, which is passed along as a context parameter. That keeps it fast
-(4–5× faster than scalatags; see [Performance](#performance)) and lets
-ordinary Scala `for`, `if` and `match` appear anywhere in a page.
+qtags is inspired by [scalatags](https://github.com/com-lihaoyi/scalatags), but
+it builds no tree of objects to generate HTML. Instead, tags are simple
+functions which directly generate HTML on a hidden builder object, passed around
+as `given` parameters through context functions. The lack of allocation of
+intermediate objects keeps qtags extremely fast and memory efficient, around
+4-5x faster and 4x less memory usage than scalatags, which itself is already
+very efficient!
 
-The repository has two modules:
+This repository has two modules:
 
-| Module | What it is | Platforms |
-|---|---|---|
-| [`qtags`](qtags/src) | the HTML DSL, rendering to strings, streams or the DOM | JVM, Scala.js, Scala Native |
-| [`qtags.sigs`](qtags/sigs/src) | a reactive UI: signals, and qtags views that update when they change | Scala.js |
+- `qtags`: the HTML DSL, rendering to strings, streams or the DOM (available for
+  the JVM, Scala.js, ans Scala Native)
+
+- `qtags.sigs`: an experimental helper module for building reactive UIs
+  (available for Scala.js only)
 
 ## qtags
 
@@ -37,10 +40,31 @@ The repository has two modules:
 statements at the start of a tag's block, before any content:
 
 ```scala
+import qtags.*
+
 a { href("/docs"); cls("nav-link"); text("Docs") }
 input { tpe("checkbox"); id("agree"); checked }    // boolean attributes take no argument
 img { src("logo.png"); alt("Logo") }               // void elements: attributes only
 br()                                               // ...and `()` when there are none
+```
+
+alternatively, using indentation-based syntax:
+
+```scala
+import qtags.*
+
+a:
+  href("/docs")
+  cls("nav-link")
+  text("Docs")
+input:
+  tpe("checkbox")
+  id("agree")
+  checked
+img:
+  src("logo.png")
+  alt("Logo")
+br()
 ```
 
 - Text is escaped. `raw(html)` inserts trusted markup as-is, which is also how
