@@ -21,7 +21,7 @@ object DomTest extends TestSuite:
       assert(html(f) == renderString(f))
 
     test("doctype adds nothing"):
-      assert(html { doctype; div { text("x") } } == "<div>x</div>")
+      assert(html { doctype(); div { text("x") } } == "<div>x</div>")
 
     test("event handlers"):
       var clicks = 0

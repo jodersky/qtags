@@ -104,8 +104,8 @@ inline def text(s: String)(using h: Html): Unit = h.text(s)
 inline def raw(html: String)(using h: Html): Unit = h.raw(html)
 
 /** `<!DOCTYPE html>`, to put before the `html` tag of a full page:
-  * `renderString { doctype; html { ... } }`.
+  * `renderString { doctype(); html { ... } }`.
   * In the DOM backend it adds nothing, since a live document already has its
   * doctype.
   */
-inline def doctype(using h: Html): Unit = h.raw("<!DOCTYPE html>")
+inline def doctype(inline tpe: String = "html")(using h: Html): Unit = h.raw(s"<!DOCTYPE $tpe>")

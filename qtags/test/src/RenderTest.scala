@@ -46,7 +46,7 @@ object RenderTest extends TestSuite:
       assert(s == """<div><b>&amp;</b><script>if (a < b && c) {}</script></div>""")
 
     test("doctype"):
-      val s = renderString { doctype; html { body { text("x") } } }
+      val s = renderString { doctype(); html { body { text("x") } } }
       assert(s == "<!DOCTYPE html><html><body>x</body></html>")
 
     def bytes(w: geny.Writable): Array[Byte] =
@@ -86,7 +86,7 @@ object RenderTest extends TestSuite:
 
     test("all backends write the same page and check the same rules"):
       val page: Frag =
-        doctype
+        doctype()
         html {
           body {
             div { cls("a\"b&c"); id("x"); text("x < y & z é") }
