@@ -49,6 +49,8 @@ TODO
 
 - [components](examples/components): building reusable components on top of
   qtags.
+- [indentation](examples/indentation): writing pages with Scala 3's
+  indentation-based syntax.
 - [rendering](examples/rendering): the different ways to render HTML.
 - [custom-backend](examples/custom-backend): rendering to your own backend.
 - [keg-server](examples/keg-server): using qtags in a web server.

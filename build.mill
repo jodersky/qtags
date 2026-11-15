@@ -134,6 +134,7 @@ object bench extends ScalaModule, JmhModule:
 
 // Examples (each has a README):
 //   ./mill examples.components.run > demo.html   a page using a small component library
+//   ./mill examples.indentation.run              pages in Scala 3's indentation-based syntax
 //   ./mill examples.rendering.run                renderString, render and renderLazy
 //   ./mill examples.custom-backend.run           a pretty-printing and a tree-building backend
 //   ./mill examples.keg-server.run               a keg app at http://localhost:8080
@@ -151,6 +152,9 @@ object examples extends Module:
     def moduleDeps = Seq(qtags.jvm)
 
   object rendering extends Example:
+    def moduleDeps = Seq(qtags.jvm)
+
+  object indentation extends Example:
     def moduleDeps = Seq(qtags.jvm)
 
   object `custom-backend` extends Example:
