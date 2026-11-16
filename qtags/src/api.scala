@@ -74,8 +74,29 @@ trait Html:
   *
   * Tags become a `Frag` where one is expected: as an argument of type `Frag`,
   * or as the value of a `def` or `val` declared as `Frag`. A `val` needs that
-  * type: `val x = p { ... }` doesn't compile (no given `Html`), while
-  * `val x: Frag = p { ... }` does.
+  * type: `val x: Frag = p { ... }` is a fragment, to be rendered wherever `x`
+  * is used. Without it, what `val x = p { ... }` does depends on where it is:
+  *
+  *   - outside a fragment, it doesn't compile (no given `Html`)
+  *   - inside a fragment, e.g. in the body of a `def` returning a `Frag`, the
+  *     given `Html` is in scope, so the `p` is rendered on the spot, where the
+  *     `val` is, and `x` is `()`. This compiles, and so does using `x` where
+  *     a `Frag` is expected, e.g. `div { x }`: `()` is a `Frag` which renders
+  *     nothing.
+  *
+  * ```scala
+  * def page: Frag =
+  *   val nav = ul { ... }    // renders the ul here, before the div
+  *   div { nav }             // an empty div
+  *
+  * def page: Frag =
+  *   val nav: Frag = ul { ... }
+  *   div { nav }             // the ul inside the div
+  * ```
+  *
+  * The same goes for anything else that infers its type from a fragment
+  * rather than being told it, e.g. `Some(p { ... })` assigned to an untyped
+  * `val` holds `Some(())`.
   */
 type Frag = Html ?=> Unit
 

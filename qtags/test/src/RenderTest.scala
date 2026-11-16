@@ -18,6 +18,20 @@ object RenderTest extends TestSuite:
       val s = renderString(myList { li { text("a") }; li { text("b") } })
       assert(s == """<ul class="my-list"><li>a</li><li>b</li></ul>""")
 
+    test("a val needs its type to hold a fragment"):
+      def untyped: Frag =
+        val x = p { text("x") } // rendered here, x is ()
+        div { x }
+      def typed: Frag =
+        val x: Frag = p { text("x") }
+        div { x }
+      def untypedOption: Frag =
+        val x = Some(p { text("x") }) // rendered here, x is Some(())
+        div { x.foreach(identity) }
+      assert(renderString(untyped) == "<p>x</p><div></div>")
+      assert(renderString(typed) == "<div><p>x</p></div>")
+      assert(renderString(untypedOption) == "<p>x</p><div></div>")
+
     test("attribute after content throws"):
       assertThrows[IllegalStateException]:
         renderString(div { text("x"); cls("late") })
